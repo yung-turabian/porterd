@@ -231,6 +231,16 @@ int moveToMusicDir(DIR *userDir, UserPaths *paths)
   return 0;
 }
 
+int checkForPARTFiles(DIR *userDir)
+{
+  while((userDirEntry = readdir(userDir)) != NULL) {
+    if(strstr(userDirEntry->d_name, ".PART") != NULL) {
+      return 0;
+    }
+  }
+  return -1;
+}
+
 int runScan(DIR *dirObj, UserPaths *paths, const char *dir)
 {
   if((dirObj = opendir(dir)) == NULL) {
@@ -279,6 +289,7 @@ int main(int argc, char **argv)
   while(1) {
     sleep(60);
     syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
+    checkForPARTFiles(userDir);
     runScan(userDir, paths, paths->Downloads);
   }
 
