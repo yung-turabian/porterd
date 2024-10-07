@@ -12,6 +12,7 @@
 #include <cstring>
 #include <cerrno>
 
+#include "porterd.h"
 #include "daemon_util.h"
 
 
@@ -143,8 +144,6 @@ int transDaemon(int flags)
   return 0;
 }
 
-int fexists(const char *file);
-
 int fmove(const char *oldpath, char *newpath)
 {
   char new_name[100];
@@ -182,61 +181,33 @@ int fexists(const char *file)
   }
 }
 
-struct UserPaths {
-  char Home[30];
-  char Downloads[50];
-  char Music[50];
-};
 
 DIR *userDir;
 struct dirent *userDirEntry;
 
-int main(int argc, char **argv)
+int findUserPaths(UserPaths *paths)
 {
-  /*int rc;
-  const char *LOGNAME = "PORTERD";
-
-  rc = transDaemon(0);
-  if(rc) {
-    syslog(LOG_USER | LOG_ERR, "error starting");
-    closelog();
-    return EXIT_FAILURE;
+  char *homeDir;
+  
+  if((homeDir = getenv("HOME")) != NULL) {
+    strcpy(paths->Home, homeDir);
   }
 
-  // daemon begunth
+  strncpy(paths->Downloads, paths->Home, strlen(paths->Home) + 1);
+  strncat(paths->Downloads, "/Downloads/", 12);
 
-  openlog(LOGNAME, LOG_PID, LOG_USER);
-  syslog(LOG_USER | LOG_INFO, "starting");
-
-  while(1) {
-    sleep(10);
-    syslog(LOG_USER | LOG_INFO, "running");
-    }*/
-
-  UserPaths paths;
+  strncpy(paths->Music, paths->Home, strlen(paths->Home) + 1);
+  strncat(paths->Music, "/Music/", 8);
   
-  strcpy(paths.Home, getenv("HOME"));
+  strncpy(paths->Documents, paths->Home, strlen(paths->Home) + 1);
+  strncat(paths->Documents, "/Documents/", 12);
 
-  strncpy(paths.Downloads, paths.Home, strlen(paths.Home) + 1);
-  strncat(paths.Downloads, "/Downloads/", 12);
 
-  strncpy(paths.Music, paths.Home, strlen(paths.Home) + 1);
-  strncat(paths.Music, "/Music/", 8);
+  return 0;
+}
 
-  
-  
-  
-  if((userDir = opendir(paths.Downloads)) == NULL) {
-    perror("opendir() error");
-    return 1;
-  }
-
-  if((userDirEntry = readdir(userDir)) == NULL) {
-    fprintf(stdout, "No files to deliver");
-    closedir(userDir);
-    return 0;
-  }
-
+int moveToMusicDir(DIR *userDir, UserPaths *paths)
+{
   while((userDirEntry = readdir(userDir)) != NULL) {
     if(strstr(userDirEntry->d_name, ".mp3") != NULL) {
       fprintf(stdout, "[%s]\n", userDirEntry->d_name);
@@ -244,10 +215,10 @@ int main(int argc, char **argv)
       char oldpath[100];
       char newpath[100];
       
-      strcpy(oldpath, paths.Downloads);
+      strcpy(oldpath, paths->Downloads);
       strcat(oldpath, userDirEntry->d_name);
 
-      strcpy(newpath, paths.Music);
+      strcpy(newpath, paths->Music);
 
       strcat(newpath, userDirEntry->d_name);
 
@@ -257,9 +228,60 @@ int main(int argc, char **argv)
 
   }
 
-  fprintf(stdout,"Delivered! \n");
+  return 0;
+}
 
+int runScan(DIR *dirObj, UserPaths *paths, const char *dir)
+{
+  if((dirObj = opendir(dir)) == NULL) {
+    perror("opendir() error");
+    return 1;
+  }
+  
+  moveToMusicDir(dirObj, paths);
+  
+  fprintf(stdout,"Delivered! \n");
+  
   // cleanup
-  closedir(userDir);
+  closedir(dirObj);
+  return 0;
+}
+
+int main(int argc, char **argv)
+{
+
+  UserPaths *paths = (UserPaths*)malloc(sizeof(UserPaths));
+
+  findUserPaths(paths);
+
+  // Single run
+  if(argc > 1 && strcmp(argv[1], "-s") == 0 && strcmp(argv[1], "--single")) {
+    runScan(userDir, paths, paths->Downloads);
+
+    return 0;
+  }
+  
+  int rc;
+  const char *LOGNAME = "PORTERD";
+  
+  rc = transDaemon(0);
+  if(rc) {
+    syslog(LOG_USER | LOG_ERR, "error starting");
+    closelog();
+    return EXIT_FAILURE;
+  }
+  
+  // daemon begunth
+  
+  openlog(LOGNAME, LOG_PID, LOG_USER);
+  syslog(LOG_USER | LOG_INFO, "starting");
+
+  while(1) {
+    sleep(60);
+    syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
+    runScan(userDir, paths, paths->Downloads);
+  }
+
+  
   return 0;
 }
