@@ -86,6 +86,7 @@ static int createPIDFile(const char *pid_file)
 int transDaemon(int flags)
 {
   int maxfd, fd;
+  pid_t pid;
 
   closeNonStdFds();
 
@@ -93,24 +94,31 @@ int transDaemon(int flags)
 
   clearSignalMask();
 
+
   // santize enviroment block
 
-  switch(fork()) // background proc
-    {
-    case -1: return -1;
-    case 0: break;
-    default: _exit(EXIT_SUCCESS);
-    }
+  pid = fork();
 
-  if(setsid() == -1) // become leader of new session
-    return -1;
+  if(pid < 0) //error
+    exit(EXIT_FAILURE);
 
-  switch(fork()) // adopts proc id of 1, parent process killed
-    {
-    case -1: return -1;
-    case 0: break;
-    default: _exit(EXIT_SUCCESS);
-    }
+  if(pid > 0) //parent terminate
+    exit(EXIT_SUCCESS);
+
+
+
+  if(setsid() < 0) // become leader of new session
+    exit(EXIT_FAILURE);
+
+  pid = fork();
+
+  if(pid < 0) //error
+    exit(EXIT_FAILURE);
+
+  if(pid > 0) //parent terminate
+    exit(EXIT_SUCCESS);
+
+
 
   if(!(flags & BD_NO_UMASK0))
     umask(0);
@@ -234,7 +242,7 @@ int moveToMusicDir(DIR *userDir, UserPaths *paths)
 int checkForPARTFiles(DIR *userDir)
 {
   while((userDirEntry = readdir(userDir)) != NULL) {
-    if(strstr(userDirEntry->d_name, ".PART") != NULL) {
+    if(strstr(userDirEntry->d_name, ".part") != NULL) {
       return 0;
     }
   }
@@ -289,8 +297,9 @@ int main(int argc, char **argv)
   while(1) {
     sleep(60);
     syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
-    checkForPARTFiles(userDir);
-    runScan(userDir, paths, paths->Downloads);
+    if(checkForPARTFiles(userDir) != 0)
+      runScan(userDir, paths, paths->Downloads);
+    
   }
 
   
