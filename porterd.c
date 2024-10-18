@@ -192,7 +192,7 @@ int fmove(const char *oldpath, char *newpath)
   if(rename(oldpath, newpath) == 0) {
     return 0;
 	} else {
-    perror("fmove() error");
+    perror("fmove() error on attempts to rename");
     return -1;
   }
 }
@@ -343,42 +343,41 @@ int8_t parseCmdOptions(int argc, char **argv)
 		} else if(daemonMode == 1) {
 				const char *LOGNAME = "PORTERD";
 							
-							rc = transDaemon(0);
-							if(rc) {
-								syslog(LOG_USER | LOG_ERR, "error starting");
-								closelog();
-								return 0;
-							}
+				rc = transDaemon(0);
+				if(rc) {
+						syslog(LOG_USER | LOG_ERR, "error starting");
+						closelog();
+						return 1;
+				}
 							
-							// daemon begunth
+				// daemon begunth
 							
-							openlog(LOGNAME, LOG_PID, LOG_USER);
-							syslog(LOG_USER | LOG_INFO, "starting");
+				openlog(LOGNAME, LOG_PID, LOG_USER);
+				syslog(LOG_USER | LOG_INFO, "starting");
 
-							while(1) {
-								syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
+				while(1) {
+						syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
 
-								if(userDir == NULL) {
-									if((userDir = opendir(paths->Downloads)) == NULL) {
-										perror("opendir() error");
+						if(userDir == NULL) {
+								if((userDir = opendir(paths->Downloads)) == NULL) {
+										perror("opendir() error when attempt to open Dowloads");
 										return 1;
-									}
+								}
 									
-								}
+						}
 
-								if(checkForPARTFiles(userDir) != 0) {
+						if(checkForPARTFiles(userDir) != 0) {
 									runScan(userDir, paths, paths->Downloads);
-									syslog(LOG_USER | LOG_ERR, "delivered");
-								}
-								else {
-									syslog(LOG_USER | LOG_ERR, "waiting for files to finish downloading");
-								}
+									syslog(LOG_USER | LOG_ERR, "Delivered files:");
+						}
+						else {
+									syslog(LOG_USER | LOG_ERR, "Waiting for files to finish downloading");
+						}
 
 								sleep(60);
-							}
+				}
 
-
-		} else {
+		} else { // Standard mode, really for testing purposes
 				while(1) {
 						//fprintf(stdout, "running a scan on ~/Downloads\n");
 
