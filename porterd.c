@@ -4,16 +4,37 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <fcntl.h>
-#include <cstdlib>
+#include <stdlib.h>
 #include <unistd.h>
 #include <syslog.h>
 #include <signal.h>
-#include <cstdio>
-#include <cstring>
-#include <cerrno>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 #include "porterd.h"
 #include "daemon_util.h"
+
+DIR *userDir;
+
+
+void signalHandler(int sig)
+{
+		switch(sig)
+		{
+				case SIGINT:
+						if(paths != NULL)
+								free(paths);
+
+						if(userDir != NULL)
+								closedir(userDir);
+
+						exit(EXIT_SUCCESS);
+
+				default:
+						break;
+		}
+}
 
 
 static int closeNonStdFds(void)
@@ -99,15 +120,12 @@ int transDaemon(int flags)
 
   pid = fork();
 
-  if(pid < 0) //error
+  if(pid == -1) //error
     exit(EXIT_FAILURE);
-
-  if(pid > 0) //parent terminate
+  else if(pid != 0) //parent terminate
     exit(EXIT_SUCCESS);
 
-
-
-  if(setsid() < 0) // become leader of new session
+  if(setsid() == -1) // become leader of new session
     exit(EXIT_FAILURE);
 
   pid = fork();
@@ -128,12 +146,13 @@ int transDaemon(int flags)
 
   createPIDFile("/run/porterd.pid");
 
+
   if(!(flags & BD_NO_CLOSE_FILES)) {
-      maxfd = sysconf(_SC_OPEN_MAX);
-      if(maxfd == -1)
-	maxfd = BD_MAX_CLOSE;
-      for(fd = 0; fd < maxfd; fd++)
-	close(fd);
+    maxfd = sysconf(_SC_OPEN_MAX);
+    if(maxfd == -1)
+      maxfd = BD_MAX_CLOSE;
+    for(fd = 0; fd < maxfd; fd++)
+      close(fd);
   }
 
   if(!(flags & BD_NO_REOPEN_STD_FDS)) {
@@ -156,26 +175,24 @@ int fmove(const char *oldpath, char *newpath)
 {
   char new_name[100];
   int copy_num = 0;
-  char strver[20];
   
   if(fexists(newpath) == 0) {
     strcpy(new_name, newpath);
     while(fexists(new_name) == 0) {
-      strcpy(new_name, newpath); // reset
-      sprintf(strver, "(%d) ", ++copy_num);
-      strcat(new_name, strver);
+		  strcpy(new_name, newpath);
+      sprintf(new_name + strlen(new_name), " (%d)", ++copy_num);
     }
 
       if(copy_num != 0) {
-      	fprintf(stdout, "Renaming file: %s\n", new_name);
-	strcpy(newpath, new_name);
+      	fprintf(stdout, "Renaming file: '%s' -> '%s'\n", oldpath, new_name);
+				strcpy(newpath, new_name);
       }
   }
   
-  if(rename(oldpath, newpath) == 0)
+  if(rename(oldpath, newpath) == 0) {
     return 0;
-  else {
-    perror("fmove() error\n");
+	} else {
+    perror("fmove() error");
     return -1;
   }
 }
@@ -190,8 +207,7 @@ int fexists(const char *file)
 }
 
 
-DIR *userDir;
-struct dirent *userDirEntry;
+
 
 int findUserPaths(UserPaths *paths)
 {
@@ -216,6 +232,9 @@ int findUserPaths(UserPaths *paths)
 
 int moveToMusicDir(DIR *userDir, UserPaths *paths)
 {
+		struct dirent *userDirEntry;
+		rewinddir(userDir);
+
   while((userDirEntry = readdir(userDir)) != NULL) {
     if(strstr(userDirEntry->d_name, ".mp3") != NULL) {
       fprintf(stdout, "[%s]\n", userDirEntry->d_name);
@@ -233,7 +252,6 @@ int moveToMusicDir(DIR *userDir, UserPaths *paths)
       fmove(oldpath, newpath);
       
       }
-
   }
 
   return 0;
@@ -241,6 +259,10 @@ int moveToMusicDir(DIR *userDir, UserPaths *paths)
 
 int checkForPARTFiles(DIR *userDir)
 {
+		struct dirent *userDirEntry;
+
+		rewinddir(userDir);
+
   while((userDirEntry = readdir(userDir)) != NULL) {
     if(strstr(userDirEntry->d_name, ".part") != NULL) {
       return 0;
@@ -251,57 +273,154 @@ int checkForPARTFiles(DIR *userDir)
 
 int runScan(DIR *dirObj, UserPaths *paths, const char *dir)
 {
-  if((dirObj = opendir(dir)) == NULL) {
-    perror("opendir() error");
-    return 1;
-  }
-  
   moveToMusicDir(dirObj, paths);
   
-  fprintf(stdout,"Delivered! \n");
-  
-  // cleanup
-  closedir(dirObj);
   return 0;
+}
+
+int8_t parseCmdOptions(int argc, char **argv)
+{
+
+		struct option longOptions[] ={
+				{"help", no_argument, 0, 'h'},
+				{"daemon", no_argument, 0, 'd'},
+				{"single", no_argument, 0, 's'},
+				{0, 0, 0, 0}
+		};
+
+		int opt;
+		int option_index = 0;
+		int rc;
+		int singleMode, daemonMode, showHelp = 0;
+
+		while((opt = getopt_long(argc, argv, "hsd", longOptions, &option_index)) != -1)
+		{
+				switch(opt)
+				{
+						case 'h':
+								showHelp = 1;
+								break;
+
+						case 's':
+								singleMode = 1;
+								break;
+
+						case 'd':
+								daemonMode = 1;
+								break;
+
+						case '?':
+								return 1;
+
+						default:
+								fprintf(stderr, "Error parsing options\n");
+								return 1;
+				}
+		}
+
+		if(showHelp == 1) {
+				printHelp();
+				return 0;
+		}
+
+		if(singleMode == 1 && daemonMode == 1) {
+				fprintf(stderr, "Error: --standard and --daemon cannot be used together.\n");
+        return 1;
+		}
+
+		if(singleMode == 1) {
+				if(userDir == NULL) {
+						if((userDir = opendir(paths->Downloads)) == NULL) {
+								perror("opendir() error");
+								return 1;
+						}
+
+				}
+
+				if(checkForPARTFiles(userDir) != 0) {
+						runScan(userDir, paths, paths->Downloads);
+				}
+		} else if(daemonMode == 1) {
+				const char *LOGNAME = "PORTERD";
+							
+							rc = transDaemon(0);
+							if(rc) {
+								syslog(LOG_USER | LOG_ERR, "error starting");
+								closelog();
+								return 0;
+							}
+							
+							// daemon begunth
+							
+							openlog(LOGNAME, LOG_PID, LOG_USER);
+							syslog(LOG_USER | LOG_INFO, "starting");
+
+							while(1) {
+								syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
+
+								if(userDir == NULL) {
+									if((userDir = opendir(paths->Downloads)) == NULL) {
+										perror("opendir() error");
+										return 1;
+									}
+									
+								}
+
+								if(checkForPARTFiles(userDir) != 0) {
+									runScan(userDir, paths, paths->Downloads);
+									syslog(LOG_USER | LOG_ERR, "delivered");
+								}
+								else {
+									syslog(LOG_USER | LOG_ERR, "waiting for files to finish downloading");
+								}
+
+								sleep(60);
+							}
+
+
+		} else {
+				while(1) {
+						//fprintf(stdout, "running a scan on ~/Downloads\n");
+
+						if(userDir == NULL) {
+								if((userDir = opendir(paths->Downloads)) == NULL) {
+										perror("opendir() error");
+										return 1;
+								}
+									
+						}
+						
+
+						if(checkForPARTFiles(userDir) != 0) {
+								runScan(userDir, paths, paths->Downloads);
+								//fprintf(stdout, "delivered\n");
+						}
+						else {
+								fprintf(stdout, "waiting for files to finish downloading\n");
+								sleep(1);
+						}
+						
+						//sleep(1);
+				}
+
+		}
+
+		return 0;
 }
 
 int main(int argc, char **argv)
 {
 
-  UserPaths *paths = (UserPaths*)malloc(sizeof(UserPaths));
+		signal(SIGINT, signalHandler);
+
+  paths = (UserPaths*)malloc(sizeof(UserPaths));
 
   findUserPaths(paths);
 
-  // Single run
-  if(argc > 1 && strcmp(argv[1], "-s") == 0 && strcmp(argv[1], "--single")) {
-    runScan(userDir, paths, paths->Downloads);
+  parseCmdOptions(argc, argv);
 
-    return 0;
-  }
-  
-  int rc;
-  const char *LOGNAME = "PORTERD";
-  
-  rc = transDaemon(0);
-  if(rc) {
-    syslog(LOG_USER | LOG_ERR, "error starting");
-    closelog();
-    return EXIT_FAILURE;
-  }
-  
-  // daemon begunth
-  
-  openlog(LOGNAME, LOG_PID, LOG_USER);
-  syslog(LOG_USER | LOG_INFO, "starting");
-
-  while(1) {
-    sleep(60);
-    syslog(LOG_USER | LOG_INFO, "running a scan on ~/Downloads");
-    if(checkForPARTFiles(userDir) != 0)
-      runScan(userDir, paths, paths->Downloads);
-    
-  }
-
+	free(paths);
+	closedir(userDir);
   
   return 0;
 }

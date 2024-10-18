@@ -1,8 +1,9 @@
-CXX := g++
+CXX := gcc
 CXXFLAGS := -Wall -g
 
 TARGET := porterd
-SRC := porterd.cpp
+SRC := porterd.c
+HEADERS := porterd.h daemon.h
 
 all: $(TARGET)
 
