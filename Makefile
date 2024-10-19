@@ -1,14 +1,19 @@
 CXX := gcc
 CXXFLAGS := -Wall -g
 
-TARGET := porterd
-SRC := porterd.c
-HEADERS := porterd.h daemon.h
+TARGET := porter
+SRC := porter.c
+HEADERS := porter.h daemon.h
 
 all: $(TARGET)
 
 $(TARGET): $(SRC)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRC)
+
+install: all
+	sudo mv $(TARGET) /usr/bin/
+
+.PHONY: clean
 
 clean:
 	rm -f $(TARGET)

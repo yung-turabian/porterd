@@ -1,5 +1,5 @@
-#ifndef PORTERD_H
-#define PORTERD_H
+#ifndef PORTER_H
+#define PORTER_H
 
 #include <getopt.h>
 #include <stdint.h>
@@ -23,6 +23,8 @@ void printHelp() {
 		printf("  -h, --help          Display this help message.\n");
 		printf("  -s, --single        Run a single loop of delivieries.\n");
 		printf("  -d, --daemon        Run the program in daemon mode.\n");
+		printf("  -b, --block         Run the program in blocking mode.\n");
+		printf("  -l, --logs          Use less to view logs of the daemon.\n");
 }
 
 #endif
