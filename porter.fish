@@ -1,0 +1,5 @@
+complete -c porter -s h -l help -d "Display this help message"
+complete -c porter -s s -l single -d "Run a single loop of delivieries."
+complete -c porter -s d -l daemon -d " Run the program in daemon mode."
+complete -c porter -s b -l block -d "Run the program in blocking mode."
+complete -c porter -s l -l logs -d "Use less to view logs of the daemon."

@@ -12,10 +12,8 @@ $(TARGET): $(SRC)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRC)
 
 install: all
-	sudo mv $(TARGET) /usr/bin/
-
-fish_completions:
-	mv $(FISH_FILE) $(HOME)/.config/fish/completions/
+	sudo cp $(TARGET) /usr/bin/
+	sudo cp $(FISH_FILE) /usr/share/fish/completions/
 
 .PHONY: clean
 
