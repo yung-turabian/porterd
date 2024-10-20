@@ -9,11 +9,13 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <signal.h>
-#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
-#include <stdbool.h>
+
+#include "ConfParser.h"
+
+#include "extio.h"
 
 #include "porter.h"
 #include "daemon_util.h"
@@ -25,8 +27,11 @@
 typedef uint64_t u64;
 
 u64 numOfDeliveries = 0;
+u64 numOfCycles = 0;
 
 DIR *userDir;
+
+char confDir[100];
 
 
 void signalHandler(int sig)
@@ -104,11 +109,15 @@ static int createPIDFile(const char *pid_file)
 
   sprintf(my_pid_str, "%d", my_pid);
 
-  if((fd = open(pid_file, O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR)) == -1)
+  if((fd = open(pid_file, O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR)) == -1) {
+			perror("open pid");
     return -1;
+	}
 
-  if(write(fd, my_pid_str, strlen(my_pid_str)) == -1)
+  if(write(fd, my_pid_str, strlen(my_pid_str)) == -1) {
+		perror("write pid");
     return -1;
+	}
 
   close(fd);
 
@@ -162,7 +171,14 @@ int transDaemon(int flags)
   if(!(flags & BD_NO_CHDIR))
     chdir("/");
 
-  createPIDFile("/run/porterd.pid");
+	/*pidLoc = (char*)malloc(sizeof(char) * (strlen(confDir) + 12));
+
+	strcpy(pidLoc, confDir);
+	strcat(pidLoc, "porterd.pid");
+
+  createPIDFile(pidLoc);
+
+	free(pidLoc);*/
 
 
   if(!(flags & BD_NO_CLOSE_FILES)) {
@@ -194,17 +210,22 @@ int findUserPaths(UserPaths *paths)
   char *homeDir;
   
   if((homeDir = getenv("HOME")) != NULL) {
-    strcpy(paths->Home, homeDir);
+			if(strlen(homeDir) + 2 <= sizeof(paths->Home)) {
+				snprintf(paths->Home, sizeof(paths->Home), "%s/", homeDir);
+			} else {
+					fprintf(stderr, "Err: HOME directory path is too long.\n");
+					return -1;
+			}
   }
 
   strncpy(paths->Downloads, paths->Home, strlen(paths->Home) + 1);
-  strncat(paths->Downloads, "/Downloads/", 12);
+  strncat(paths->Downloads, "Downloads/", 12);
 
   strncpy(paths->Music, paths->Home, strlen(paths->Home) + 1);
-  strncat(paths->Music, "/Music/", 8);
+  strncat(paths->Music, "Music/", 8);
   
   strncpy(paths->Documents, paths->Home, strlen(paths->Home) + 1);
-  strncat(paths->Documents, "/Documents/", 12);
+  strncat(paths->Documents, "Documents/", 12);
 
 
   return 0;
@@ -305,6 +326,7 @@ int8_t parseCmdOptions(int argc, char **argv)
 				{"single", no_argument, 0, 's'},
 				{"block", no_argument, 0, 'b'},
 				{"logs", no_argument, 0, 'l'},
+				{"kill", no_argument, 0, 'k'},
 				{0, 0, 0, 0}
 		};
 
@@ -313,8 +335,9 @@ int8_t parseCmdOptions(int argc, char **argv)
 		int rc;
 		int singleMode, daemonMode, blockMode = 0;
 		int showLogs, showHelp = 0;
+		int shouldKill = 0;
 
-		while((opt = getopt_long(argc, argv, "hsdbl", longOptions, &option_index)) != -1)
+		while((opt = getopt_long(argc, argv, "khsdbl", longOptions, &option_index)) != -1)
 		{
 				switch(opt)
 				{
@@ -338,6 +361,10 @@ int8_t parseCmdOptions(int argc, char **argv)
 								showLogs = 1;
 								break;
 
+						case 'k':
+								shouldKill = 1;
+								break;
+
 						case '?':
 								return 1;
 
@@ -349,6 +376,21 @@ int8_t parseCmdOptions(int argc, char **argv)
 
 		if(showHelp == 1) {
 				printHelp();
+				return 0;
+		}
+
+		if(shouldKill == 1) {
+				pid_t pid;
+				if((pid = getPID()) != -1) {
+						int rc = kill(pid, SIGTERM);
+						if(rc == 0) {
+								fprintf(stdout, "Killed process: %d 🪦\n", pid);
+						} else {
+								perror("Error killing process");
+						}
+				} else {
+						fprintf(stdout, "Nothing to do\n");
+				}
 				return 0;
 		}
 
@@ -407,7 +449,7 @@ int8_t parseCmdOptions(int argc, char **argv)
 				pid_t pid;
 
 				if((pid = getPID()) != -1) {
-						if(promptYesOrNo("Instance running, terminate and start anew?")) {
+						if(promptYesOrNo("Instance running, terminate and start anew?") == 0) {
 								int rc = kill(pid, SIGTERM);
 								if(rc == 0) {
 										fprintf(stdout, "Killed process 🪦\n");
@@ -484,6 +526,8 @@ int8_t parseCmdOptions(int argc, char **argv)
 				fflush(stdout);
 				pclose(ps_output);
 
+				fprintf(stdout, "Number of deliveries made: %ld\n", numOfDeliveries);
+
 
 
 		}
@@ -496,14 +540,35 @@ int main(int argc, char **argv)
 
 		signal(SIGINT, signalHandler);
 
-  paths = (UserPaths*)malloc(sizeof(UserPaths));
+		paths = (UserPaths*)malloc(sizeof(UserPaths));
 
-  findUserPaths(paths);
+		findUserPaths(paths);
 
-  parseCmdOptions(argc, argv);
+		strcpy(confDir, paths->Home);
+		strcat(confDir, ".config/porter/");
 
-	free(paths);
-	closedir(userDir);
+		char *confFile;
+		confFile = (char*)malloc(sizeof(char) * (strlen(confDir) + 12));
+
+		snprintf(confFile, sizeof(char) * (strlen(confDir) + 12), "%sporter.conf", confDir);
+
+		if(fexists(confFile) == 0) {
+				parseConfFile(confFile);
+		} 
+
+		int rc = mkdir(confDir, 0700);
+		if(rc == 0) {
+				// succesful
+		} else {
+				// already exists
+		}
+
+
+
+		parseCmdOptions(argc, argv);
+
+		free(paths);
+		closedir(userDir);
   
   return 0;
 }

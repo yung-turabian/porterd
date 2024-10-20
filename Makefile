@@ -1,8 +1,8 @@
 CXX := gcc
-CXXFLAGS := -Wall -g
+CXXFLAGS := -Wall -g -DDEBUG
 
 TARGET := porter
-SRC := porter.c
+SRC := porter.c extio.c
 FISH_FILE := porter.fish
 HEADERS := porter.h daemon.h
 
