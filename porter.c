@@ -9,13 +9,24 @@
 #include "util.h"
 
 
+// Config
+int shouldCreateNewArrivalDirectory = 0;
+char **dirsToDeliverTo = NULL;
+
+
+
+// Info
 u64 numOfDeliveries = 0;
 u64 numOfCycles = 0;
 
+
+// Directories
 DIR *userDir = NULL;
 
 char *configDirName = NULL;
 
+
+// Booleans
 volatile sig_atomic_t shouldQuit = 0;
 
 void
@@ -47,6 +58,7 @@ signalHandler(int sig)
       cleanup();
       syslog(LOG_USER | LOG_INFO, "Terminating...");
       exit(EXIT_SUCCESS);
+
     case SIGINT:
       cleanup();
       exit(EXIT_SUCCESS);
@@ -55,8 +67,6 @@ signalHandler(int sig)
       break;
     }
 }
-
-
 
 
 
@@ -196,6 +206,21 @@ getPID()
 }
 
 void
+checkConfig()
+{
+  char *confFile;
+  confFile = (char*)malloc(sizeof(char) * (strlen(configDirName) + 12));
+
+  snprintf(confFile, sizeof(char) * (strlen(configDirName) + 12), "%sporter.conf", configDirName);
+
+  if(fexists(confFile) == 0) {
+    parseConfFile(confFile);
+  }
+  free(confFile);
+
+}
+
+void
 startup()
 {
   paths = (UserPaths*)malloc(sizeof(UserPaths));
@@ -323,6 +348,17 @@ parseCmdOptions(int argc, char **argv)
   if(blockMode == 1) {
     
     startup();
+
+    struct sigaction sa;
+    sa.sa_handler = signalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if(sigaction(SIGINT, &sa, NULL) == -1) {
+      perror("Error registering SIGINT handler");
+      return 1;
+    }
+
     
     while(1) {
       //fprintf(stdout, "running a scan on ~/Downloads\n");
@@ -345,7 +381,10 @@ parseCmdOptions(int argc, char **argv)
 	sleep(1);
       }
 						
-      //sleep(1);
+      sleep(1);
+
+      printf("Checking ~/.config/porter/porter.conf for updates\n");
+      checkConfig();
     }
   } 
 
@@ -391,6 +430,17 @@ parseCmdOptions(int argc, char **argv)
       closelog();
       return 1;
     }
+
+    struct sigaction sa;
+    sa.sa_handler = signalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if(sigaction(SIGTERM, &sa, NULL) == -1) {
+      perror("Error registering SIGTERM handler");
+      return 1;
+    }
+
 							
     // daemon begunth
 
@@ -419,6 +469,9 @@ parseCmdOptions(int argc, char **argv)
       }
 
       sleep(60);
+
+      syslog(LOG_USER | LOG_INFO, "Checking ~/.config/porter/porter.conf for updates");
+      checkConfig();
     }
 
   } else {
@@ -449,9 +502,6 @@ parseCmdOptions(int argc, char **argv)
     pclose(ps_output);
 
     fprintf(stdout, "Number of deliveries made: %ld\n", numOfDeliveries);
-
-
-
   }
 
   return 0;
@@ -460,20 +510,6 @@ parseCmdOptions(int argc, char **argv)
 int main(int argc, char **argv)
 {
 
-  struct sigaction sa;
-  sa.sa_handler = signalHandler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = 0;
-
-  if(sigaction(SIGTERM, &sa, NULL) == -1) {
-    perror("Error registering SIGTERM handler");
-    return 1;
-  }
-
-  if(sigaction(SIGINT, &sa, NULL) == -1) {
-    perror("Error registering SIGINT handler");
-    return 1;
-  }
 
 
   parseCmdOptions(argc, argv);
