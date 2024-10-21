@@ -13,6 +13,9 @@ $(TARGET): $(SRC)
 
 install: all
 	sudo cp $(TARGET) /usr/bin/
+
+installWFish: all
+	sudo cp $(TARGET) /usr/bin/
 	sudo cp $(FISH_FILE) /usr/share/fish/completions/
 
 .PHONY: clean
