@@ -2,7 +2,6 @@
 #define PORTER_H
 
 #include <getopt.h>
-#include <stdint.h>
 
 typedef struct {
   char Home[30];
